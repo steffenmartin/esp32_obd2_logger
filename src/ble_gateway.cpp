@@ -12,6 +12,7 @@ NimBLEClient *client = nullptr;
 NimBLERemoteCharacteristic *remoteCharacteristic = nullptr;
 String devicesHtml = "<tr><td colspan='4' style='text-align:center;'>Scan sequence pending...</td></tr>";
 String targetAddress;
+uint8_t targetAddressType = BLE_ADDR_PUBLIC;
 unsigned long lastScanMs = 0;
 bool scanning = false;
 bool connected = false;
@@ -34,10 +35,11 @@ void scanCompleteCallback(NimBLEScanResults foundDevices) {
     String address = device.getAddress().toString().c_str();
     bool isLeLink = name.indexOf("OBDBLE") != -1 || name.indexOf("LELink") != -1 ||
       (device.haveServiceUUID() && device.isAdvertisingService(NimBLEUUID(LELINK_SERVICE_UUID)));
+    uint8_t addressType = device.getAddressType();
     html += "<tr" + String(isLeLink ? " style='background:#d4edda;font-weight:bold;'" : "") + ">";
     html += "<td>" + name + String(isLeLink ? " (LELink candidate)" : "") + "</td>";
-    html += "<td><code>" + address + "</code></td><td>" + String(device.getRSSI()) + " dBm</td>";
-    html += isLeLink ? "<td><a href='/terminal?addr=" + address + "'>Open terminal</a></td></tr>" : "<td>Standard BLE</td></tr>";
+    html += "<td><code>" + address + "</code> <small>(" + String(addressType == BLE_ADDR_PUBLIC ? "public" : "random") + ")</small></td><td>" + String(device.getRSSI()) + " dBm</td>";
+    html += isLeLink ? "<td><a href='/terminal?addr=" + address + "&type=" + String(addressType) + "'>Open terminal</a></td></tr>" : "<td>Standard BLE</td></tr>";
   }
   devicesHtml = html;
   scan->clearResults();
@@ -60,8 +62,12 @@ void bleGatewayTick() {
   scan->start(3, scanCompleteCallback, false);
 }
 
-void bleGatewaySetTargetAddress(const String &address) { targetAddress = address; }
+void bleGatewaySetTargetAddress(const String &address, uint8_t addressType) {
+  targetAddress = address;
+  targetAddressType = addressType;
+}
 String bleGatewayTargetAddress() { return targetAddress; }
+uint8_t bleGatewayTargetAddressType() { return targetAddressType; }
 String bleGatewayDevicesHtml() { return devicesHtml; }
 bool bleGatewayIsConnected() { return connected && client != nullptr && client->isConnected(); }
 
@@ -70,8 +76,13 @@ bool bleGatewayEnsureConnected() {
   if (targetAddress.isEmpty()) { diagnosticLogAppend("[BLE] No target address selected."); return false; }
   if (scan->isScanning()) scan->stop();
   if (client == nullptr) client = NimBLEDevice::createClient();
-  diagnosticLogAppend("[BLE] Connecting to " + targetAddress + "...");
-  client->setConnectionParams(24, 40, 0, 50); if (!client->connect(NimBLEAddress(targetAddress.c_str()), BLE_ADDR_PUBLIC) && !client->connect(NimBLEAddress(targetAddress.c_str()), BLE_ADDR_RANDOM)) { diagnosticLogAppend("[BLE] Connection failed."); return false; }
+  String typeLabel = targetAddressType == BLE_ADDR_PUBLIC ? "PUBLIC" : "RANDOM";
+  diagnosticLogAppend("[BLE] Connecting to " + targetAddress + " (" + typeLabel + ")...");
+  client->setConnectionParams(24, 40, 0, 50);
+  if (!client->connect(NimBLEAddress(targetAddress.c_str(), targetAddressType))) {
+    diagnosticLogAppend("[BLE] Connection failed (address type: " + typeLabel + ").");
+    return false;
+  }
   NimBLERemoteService *service = client->getService(NimBLEUUID(LELINK_SERVICE_UUID));
   if (service == nullptr) { diagnosticLogAppend("[BLE] FFE0 service not found."); client->disconnect(); return false; }
   remoteCharacteristic = service->getCharacteristic(NimBLEUUID(LELINK_CHARACTERISTIC_UUID));

@@ -19,7 +19,10 @@ String csvEscape(const String &value) {
 void handleRoot() { server.send(200, "text/html; charset=utf-8", webPagesDashboard()); }
 void handleDevices() { server.send(200, "text/html; charset=utf-8", bleGatewayDevicesHtml()); }
 void handleTerminal() {
-  if (server.hasArg("addr")) bleGatewaySetTargetAddress(server.arg("addr"));
+  if (server.hasArg("addr")) {
+    uint8_t addressType = server.hasArg("type") ? static_cast<uint8_t>(server.arg("type").toInt()) : 0; // 0 = BLE_ADDR_PUBLIC
+    bleGatewaySetTargetAddress(server.arg("addr"), addressType);
+  }
   server.send(200, "text/html; charset=utf-8", webPagesTerminal(bleGatewayTargetAddress()));
 }
 void handleDiagnostics() { server.send(200, "text/plain; charset=utf-8", diagnosticLogGet()); }
