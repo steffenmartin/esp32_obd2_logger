@@ -86,8 +86,14 @@ String webPagesTerminal(const String &address) {
   <button onclick="refresh()">Refresh</button>
   
   <p>
-    <a href="/">Back to discovery</a>
+    <a href="javascript:void(0)" onclick="disconnect()">Disconnect & Back to discovery</a>
   </p>
+  <script>
+    async function disconnect() {
+      await fetch('/disconnect');
+      window.location.href = '/';
+    }
+  </script>
 </body>
 </html>)HTML";
 }

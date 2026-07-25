@@ -16,12 +16,37 @@ String csvEscape(const String &value) {
   return escaped + "\"";
 }
 
-void handleRoot() { server.send(200, "text/html; charset=utf-8", webPagesDashboard()); }
-void handleDevices() { server.send(200, "text/html; charset=utf-8", bleGatewayDevicesHtml()); }
+void handleDisconnect() {
+  bleGatewayDisconnect();
+  server.send(200, "text/plain", "Disconnected");
+}
+
+void handleRoot() { 
+  if (bleGatewayIsConnected()) {
+    server.sendHeader("Location", "/terminal", true);
+    server.send(302, "text/plain", "");
+  } else {
+    server.send(200, "text/html; charset=utf-8", webPagesDashboard());
+  }
+}
+void handleDevices() {
+  if (bleGatewayIsConnected()) {
+    server.sendHeader("Location", "/terminal", true);
+    server.send(302, "text/plain", "");
+  } else {
+    server.send(200, "text/html; charset=utf-8", bleGatewayDevicesHtml());
+  }
+}
 void handleTerminal() {
   if (server.hasArg("addr")) {
     uint8_t addressType = server.hasArg("type") ? static_cast<uint8_t>(server.arg("type").toInt()) : 0; // 0 = BLE_ADDR_PUBLIC
     bleGatewaySetTargetAddress(server.arg("addr"), addressType);
+    bleGatewayEnsureConnected(); // Attempt to connect upon navigating to terminal with addr
+  }
+  if (!bleGatewayIsConnected()) {
+    server.sendHeader("Location", "/devices", true);
+    server.send(302, "text/plain", "");
+    return;
   }
   server.send(200, "text/html; charset=utf-8", webPagesTerminal(bleGatewayTargetAddress()));
 }
@@ -30,6 +55,7 @@ void handleConnect() {
   bool connected = bleGatewayEnsureConnected();
   server.send(connected ? 200 : 409, "text/plain", connected ? "Connected" : "Connection failed");
 }
+
 void handleSend() {
   if (!server.hasArg("cmd")) { server.send(400, "text/plain", "Missing command parameter"); return; }
   String command = server.arg("cmd");
@@ -55,6 +81,7 @@ void webServerBegin() {
   server.on("/terminal", handleTerminal);
   server.on("/diagnostics", handleDiagnostics);
   server.on("/connect", handleConnect);
+  server.on("/disconnect", handleDisconnect);
   server.on("/send", handleSend);
   server.on("/raw-log.csv", handleRawLog);
   server.begin();

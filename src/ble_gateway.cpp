@@ -110,3 +110,12 @@ bool bleGatewaySendCommand(const String &command) {
   diagnosticLogAppend("[User] " + command);
   return true;
 }
+
+void bleGatewayDisconnect() {
+  if (client != nullptr) {
+    client->disconnect();
+    client = nullptr;
+    remoteCharacteristic = nullptr;
+    connected = false;
+  }
+}

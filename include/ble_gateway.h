@@ -11,3 +11,4 @@ String bleGatewayDevicesHtml();
 bool bleGatewayEnsureConnected();
 bool bleGatewayIsConnected();
 bool bleGatewaySendCommand(const String &command);
+void bleGatewayDisconnect();
