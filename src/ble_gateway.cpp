@@ -99,7 +99,10 @@ bool bleGatewayEnsureConnected() {
 
 bool bleGatewaySendCommand(const String &command) {
   if (!bleGatewayEnsureConnected()) return false;
-  if (obdResponseAssemblerPending()) return false;
+  if (obdResponseAssemblerPending()) {
+    diagnosticLogAppend("[User] Warning: Previous command still pending, timing it out.");
+    obdResponseAssemblerTimeout();
+  }
   if (!obdResponseAssemblerBegin(command)) return false;
   String payload = command + "\r";
   if (!remoteCharacteristic->writeValue(reinterpret_cast<const uint8_t *>(payload.c_str()), payload.length(), true)) {

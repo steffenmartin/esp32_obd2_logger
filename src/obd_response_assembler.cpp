@@ -24,7 +24,7 @@ void obdResponseAssemblerAppend(const uint8_t *data, size_t length) {
   for (size_t i = 0; i < length && pendingResponse.length() < OBD_RESPONSE_SIZE - 1; ++i) {
     pendingResponse += static_cast<char>(data[i]);
   }
-  if (memchr(data, '>', length) != nullptr) {
+  if (memchr(data, '>', length) != nullptr || pendingResponse.indexOf("ERROR") != -1) {
     obdLogAppend(pendingCommand, pendingResponse, true);
     pending = false;
   }
