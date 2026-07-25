@@ -11,6 +11,7 @@ NimBLEScan *scan = nullptr;
 NimBLEClient *client = nullptr;
 NimBLERemoteCharacteristic *remoteCharacteristic = nullptr;
 String devicesHtml = "<tr><td colspan='4' style='text-align:center;'>Scan sequence pending...</td></tr>";
+String devicesJson = "[]";
 String targetAddress;
 uint8_t targetAddressType = BLE_ADDR_PUBLIC;
 unsigned long lastScanMs = 0;
@@ -26,6 +27,7 @@ void notifyCallback(NimBLERemoteCharacteristic *, uint8_t *data, size_t length, 
 
 void scanCompleteCallback(NimBLEScanResults foundDevices) {
   String html;
+  String json = "[";
   if (foundDevices.getCount() == 0) {
     html = "<tr><td colspan='4' style='text-align:center;'>No devices found.</td></tr>";
   }
@@ -36,12 +38,17 @@ void scanCompleteCallback(NimBLEScanResults foundDevices) {
     bool isLeLink = name.indexOf("OBDBLE") != -1 || name.indexOf("LELink") != -1 ||
       (device.haveServiceUUID() && device.isAdvertisingService(NimBLEUUID(LELINK_SERVICE_UUID)));
     uint8_t addressType = device.getAddressType();
+    
     html += "<tr" + String(isLeLink ? " style='background:#d4edda;font-weight:bold;'" : "") + ">";
     html += "<td>" + name + String(isLeLink ? " (LELink candidate)" : "") + "</td>";
     html += "<td><code>" + address + "</code> <small>(" + String(addressType == BLE_ADDR_PUBLIC ? "public" : "random") + ")</small></td><td>" + String(device.getRSSI()) + " dBm</td>";
     html += isLeLink ? "<td><a href='/terminal?addr=" + address + "&type=" + String(addressType) + "'>Open terminal</a></td></tr>" : "<td>Standard BLE</td></tr>";
+    
+    json += (i > 0 ? "," : "") + String("{\"name\":\"") + name + "\",\"address\":\"" + address + "\",\"rssi\":" + device.getRSSI() + ",\"isLeLink\":" + (isLeLink ? "true" : "false") + ",\"type\":" + addressType + "}";
   }
+  json += "]";
   devicesHtml = html;
+  devicesJson = json;
   scan->clearResults();
   scanning = false;
 }
@@ -69,6 +76,7 @@ void bleGatewaySetTargetAddress(const String &address, uint8_t addressType) {
 String bleGatewayTargetAddress() { return targetAddress; }
 uint8_t bleGatewayTargetAddressType() { return targetAddressType; }
 String bleGatewayDevicesHtml() { return devicesHtml; }
+String bleGatewayDevicesJson() { return devicesJson; }
 bool bleGatewayIsConnected() { return connected && client != nullptr && client->isConnected(); }
 
 bool bleGatewayEnsureConnected() {

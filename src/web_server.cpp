@@ -34,7 +34,7 @@ void handleDevices() {
     server.sendHeader("Location", "/terminal", true);
     server.send(302, "text/plain", "");
   } else {
-    server.send(200, "text/html; charset=utf-8", bleGatewayDevicesHtml());
+    server.send(200, "application/json", bleGatewayDevicesJson());
   }
 }
 void handleTerminal() {
@@ -78,6 +78,7 @@ void handleRawLog() {
 void webServerBegin() {
   server.on("/", handleRoot);
   server.on("/devices", handleDevices);
+  server.on("/devices-json", handleDevices);
   server.on("/terminal", handleTerminal);
   server.on("/diagnostics", handleDiagnostics);
   server.on("/connect", handleConnect);

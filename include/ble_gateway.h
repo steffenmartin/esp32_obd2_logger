@@ -8,6 +8,7 @@ void bleGatewaySetTargetAddress(const String &address, uint8_t addressType);
 String bleGatewayTargetAddress();
 uint8_t bleGatewayTargetAddressType();
 String bleGatewayDevicesHtml();
+String bleGatewayDevicesJson();
 bool bleGatewayEnsureConnected();
 bool bleGatewayIsConnected();
 bool bleGatewaySendCommand(const String &command);

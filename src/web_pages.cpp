@@ -8,17 +8,54 @@ String webPagesDashboard() {
   <title>ESP32 OBD-II Logger</title>
   <style>
     body { font: 16px system-ui; margin: 2rem; max-width: 900px; }
-    table { border-collapse: collapse; width: 100%; }
-    td, th { padding: .6rem; border-bottom: 1px solid #ddd; }
+    table { border-collapse: collapse; width: 100%; cursor: pointer; }
+    td, th { padding: .6rem; border-bottom: 1px solid #ddd; text-align: left; }
+    th { background: #f4f4f4; }
     code { background: #eee; padding: .15rem; }
     .actions { margin: 1rem 0; }
+    .lelink { background: #e8f5e9; }
   </style>
   <script>
-    async function refresh() {
-      let list = document.getElementById('device-list');
-      list.innerHTML = await (await fetch('/devices')).text();
+    let devices = [];
+    let sortCol = 'name';
+    let sortAsc = true;
+
+    function sortDevices(col) {
+      if (sortCol === col) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      render();
     }
-    setInterval(refresh, 2000);
+
+    function render() {
+      let tbodyLe = document.getElementById('device-list-le');
+      let tbodyOther = document.getElementById('device-list-other');
+      tbodyLe.innerHTML = '';
+      tbodyOther.innerHTML = '';
+
+      let sorted = [...devices].sort((a, b) => {
+        let valA = a[sortCol].toString().toLowerCase();
+        let valB = b[sortCol].toString().toLowerCase();
+        let cmp = valA < valB ? -1 : valA > valB ? 1 : 0;
+        return sortAsc ? cmp : -cmp;
+      });
+
+      sorted.forEach(d => {
+        let row = document.createElement('tr');
+        row.innerHTML = `<td>${d.name}</td><td><code>${d.address}</code></td><td>${d.rssi}</td>
+                         <td>${d.isLeLink ? `<a href='/terminal?addr=${d.address}&type=${d.type}'>Connect</a>` : ''}</td>`;
+        if (d.isLeLink) tbodyLe.appendChild(row);
+        else tbodyOther.appendChild(row);
+      });
+    }
+
+    async function refresh() {
+      try {
+        let response = await fetch('/devices-json');
+        devices = await response.json();
+        render();
+      } catch (e) { console.error(e); }
+    }
+    setInterval(refresh, 5000);
   </script>
 </head>
 <body>
@@ -28,11 +65,29 @@ String webPagesDashboard() {
     <a href="/raw-log.csv">Download raw log (CSV)</a> · 
     <a href="/diagnostics">Diagnostics</a>
   </p>
+  <h3>LELink Candidates</h3>
   <table>
     <thead>
-      <tr><th>Name</th><th>Address</th><th>RSSI</th><th></th></tr>
+      <tr>
+        <th onclick="sortDevices('name')">Name</th>
+        <th onclick="sortDevices('address')">Address</th>
+        <th onclick="sortDevices('rssi')">RSSI</th>
+        <th>Action</th>
+      </tr>
     </thead>
-    <tbody id="device-list">Loading…</tbody>
+    <tbody id="device-list-le"></tbody>
+  </table>
+  <h3>Other Devices</h3>
+  <table>
+    <thead>
+      <tr>
+        <th onclick="sortDevices('name')">Name</th>
+        <th onclick="sortDevices('address')">Address</th>
+        <th onclick="sortDevices('rssi')">RSSI</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="device-list-other"><tr><td colspan="4">Loading…</td></tr></tbody>
   </table>
   <script>refresh();</script>
 </body>
