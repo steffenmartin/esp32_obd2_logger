@@ -1,7 +1,5 @@
 #include "web_server.h"
-
 #include <WebServer.h>
-
 #include "ble_gateway.h"
 #include "diagnostic_log.h"
 #include "obd_log.h"
@@ -14,8 +12,15 @@ WebServer server(80);
 
 String csvEscape(const String &value) {
   String escaped = "\"";
-  for (size_t i = 0; i < value.length(); ++i) escaped += value[i] == '\"' ? "\"\"" : String(value[i]);
-  return escaped + "\"";
+  for (size_t i = 0; i < value.length(); ++i) {
+    if (value[i] == '\"') {
+      escaped += "\"\"";
+    } else {
+      escaped += value[i];
+    }
+  }
+  escaped += "\"";
+  return escaped;
 }
 
 void handleDisconnect() {
@@ -24,39 +29,17 @@ void handleDisconnect() {
   server.send(200, "text/plain", "Disconnected");
 }
 
-void handleRoot() { 
-  if (bleGatewayIsConnected()) {
-    server.sendHeader("Location", "/terminal", true);
-    server.send(302, "text/plain", "");
-  } else {
-    server.send(200, "text/html; charset=utf-8", webPagesDashboard());
-  }
-}
-void handleDevices() {
-  if (bleGatewayIsConnected()) {
-    server.sendHeader("Location", "/terminal", true);
-    server.send(302, "text/plain", "");
-  } else {
-    server.send(200, "application/json", bleGatewayDevicesJson());
-  }
-}
-void handleTerminal() {
-  if (server.hasArg("addr")) {
-    uint8_t addressType = server.hasArg("type") ? static_cast<uint8_t>(server.arg("type").toInt()) : 0; // 0 = BLE_ADDR_PUBLIC
-    bleGatewaySetTargetAddress(server.arg("addr"), addressType);
-    bleGatewayEnsureConnected(); // Attempt to connect upon navigating to terminal with addr
-  }
-  if (!bleGatewayIsConnected()) {
-    server.sendHeader("Location", "/devices", true);
-    server.send(302, "text/plain", "");
-    return;
-  }
-  server.send(200, "text/html; charset=utf-8", webPagesTerminal(bleGatewayTargetAddress()));
-}
+void handleRoot() { server.send(200, "text/html; charset=utf-8", webPagesDashboard()); }
+void handleDevices() { server.send(200, "application/json", bleGatewayDevicesJson()); }
+void handleTerminal() { server.send(200, "text/html; charset=utf-8", webPagesTerminal(bleGatewayTargetAddress())); }
 void handleDiagnostics() { server.send(200, "text/plain; charset=utf-8", diagnosticLogGet()); }
+
 void handleConnect() {
-  bool connected = bleGatewayEnsureConnected();
-  server.send(connected ? 200 : 409, "text/plain", connected ? "Connected" : "Connection failed");
+  if (server.hasArg("addr")) {
+    bleGatewaySetTargetAddress(server.arg("addr"), 0);
+  }
+  bleGatewayEnsureConnected();
+  server.send(202, "text/plain", "Connection requested");
 }
 
 void handleSend() {
@@ -66,6 +49,7 @@ void handleSend() {
   bool sent = bleGatewaySendCommand(command);
   server.send(sent ? 200 : 409, "text/plain", sent ? "Acknowledged" : "Command already in progress or connection failed");
 }
+
 void handleRawLog() {
   server.sendHeader("Content-Disposition", "attachment; filename=obd-raw-log.csv");
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -73,49 +57,40 @@ void handleRawLog() {
   server.sendContent("timestamp_ms,sequence,command,response,complete\r\n");
   for (size_t i = 0; i < obdLogCount(); ++i) {
     ObdLogRecord record = obdLogAt(i);
-    server.sendContent(String(record.timestampMs) + "," + String(record.sequence) + "," + csvEscape(record.command) + "," + csvEscape(record.response) + "," + (record.complete ? "true" : "false") + "\r\n");
+    String line = String(record.timestampMs) + "," + String(record.sequence) + "," + csvEscape(record.command) + "," + csvEscape(record.response) + "," + (record.complete ? "true" : "false") + "\r\n";
+    server.sendContent(line);
   }
 }
 
-// Attempts to acquire the command channel for Survey mode and, if
-// successful, starts a fresh survey run. Returns 409 (Conflict) rather
-// than starting anything if a command from another mode is still in
-// flight - the browser-side UI should treat this as "try again in a
-// moment" rather than a hard failure.
 void handleSurveyStart() {
   bool started = obdModeRequest(ObdMode::Survey);
   if (started) obdSurveyStart();
-  server.send(started ? 200 : 409, "text/plain",
-              started ? "Survey started" : "Command in flight, try again");
+  server.send(started ? 200 : 409, "text/plain", started ? "Survey started" : "Command in flight, try again");
 }
 
-// Stops the survey and immediately releases the command channel back to
-// Idle, so Terminal/Poller can be used again right away without the user
-// needing a separate "release mode" step.
 void handleSurveyStop() {
   obdSurveyStop();
   obdModeRequest(ObdMode::Idle);
   server.send(200, "text/plain", "Survey stopped");
 }
 
-// Plain-text progress snapshot, intended to be polled periodically (e.g.
-// every second or two) by a web page while a survey is running.
-void handleSurveyStatus() {
-  server.send(200, "text/plain", obdSurveyStatus());
-}
+void handleSurveyStatus() { server.send(200, "text/plain", obdSurveyStatus()); }
 
 void handleServerStatusJson() {
-  String json = "{";
-  json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
-  json += "\"millis\":" + String(millis());
-  json += "}";
+  String json = "{\"freeHeap\":" + String(ESP.getFreeHeap()) + ",\"millis\":" + String(millis()) + "}";
+  server.send(200, "application/json", json);
+}
+
+void handleApiState() {
+  String devicesJson = bleGatewayDevicesJson();
+  String json = "{\"connection\":\"" + String(bleGatewayIsConnected() ? "CONNECTED" : "DISCONNECTED") + 
+                "\",\"target\":\"" + bleGatewayTargetAddress() + 
+                "\",\"devices\":" + (devicesJson.length() > 0 ? devicesJson : "[]") + "}";
   server.send(200, "application/json", json);
 }
 }
 
-void handleServerStatus() {
-  server.send(200, "text/html; charset=utf-8", webPagesServerStatus());
-}
+void handleServerStatus() { server.send(200, "text/html; charset=utf-8", webPagesServerStatus()); }
 
 void webServerBegin() {
   server.on("/", handleRoot);
@@ -132,6 +107,7 @@ void webServerBegin() {
   server.on("/survey/status", handleSurveyStatus);
   server.on("/server/status", handleServerStatus);
   server.on("/server/status-json", handleServerStatusJson);
+  server.on("/api/state", handleApiState);
   server.begin();
 }
 
