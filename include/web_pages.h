@@ -4,3 +4,4 @@
 
 String webPagesDashboard();
 String webPagesTerminal(const String &address);
+String webPagesServerStatus();

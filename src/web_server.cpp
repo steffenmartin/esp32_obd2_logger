@@ -5,6 +5,8 @@
 #include "ble_gateway.h"
 #include "diagnostic_log.h"
 #include "obd_log.h"
+#include "obd_mode.h"
+#include "obd_survey.h"
 #include "web_pages.h"
 
 namespace {
@@ -18,6 +20,7 @@ String csvEscape(const String &value) {
 
 void handleDisconnect() {
   bleGatewayDisconnect();
+  bleGatewayUnsetTargetAddress();
   server.send(200, "text/plain", "Disconnected");
 }
 
@@ -73,6 +76,45 @@ void handleRawLog() {
     server.sendContent(String(record.timestampMs) + "," + String(record.sequence) + "," + csvEscape(record.command) + "," + csvEscape(record.response) + "," + (record.complete ? "true" : "false") + "\r\n");
   }
 }
+
+// Attempts to acquire the command channel for Survey mode and, if
+// successful, starts a fresh survey run. Returns 409 (Conflict) rather
+// than starting anything if a command from another mode is still in
+// flight - the browser-side UI should treat this as "try again in a
+// moment" rather than a hard failure.
+void handleSurveyStart() {
+  bool started = obdModeRequest(ObdMode::Survey);
+  if (started) obdSurveyStart();
+  server.send(started ? 200 : 409, "text/plain",
+              started ? "Survey started" : "Command in flight, try again");
+}
+
+// Stops the survey and immediately releases the command channel back to
+// Idle, so Terminal/Poller can be used again right away without the user
+// needing a separate "release mode" step.
+void handleSurveyStop() {
+  obdSurveyStop();
+  obdModeRequest(ObdMode::Idle);
+  server.send(200, "text/plain", "Survey stopped");
+}
+
+// Plain-text progress snapshot, intended to be polled periodically (e.g.
+// every second or two) by a web page while a survey is running.
+void handleSurveyStatus() {
+  server.send(200, "text/plain", obdSurveyStatus());
+}
+
+void handleServerStatusJson() {
+  String json = "{";
+  json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
+  json += "\"millis\":" + String(millis());
+  json += "}";
+  server.send(200, "application/json", json);
+}
+}
+
+void handleServerStatus() {
+  server.send(200, "text/html; charset=utf-8", webPagesServerStatus());
 }
 
 void webServerBegin() {
@@ -85,6 +127,11 @@ void webServerBegin() {
   server.on("/disconnect", handleDisconnect);
   server.on("/send", handleSend);
   server.on("/raw-log.csv", handleRawLog);
+  server.on("/survey/start", handleSurveyStart);
+  server.on("/survey/stop", handleSurveyStop);
+  server.on("/survey/status", handleSurveyStatus);
+  server.on("/server/status", handleServerStatus);
+  server.on("/server/status-json", handleServerStatusJson);
   server.begin();
 }
 

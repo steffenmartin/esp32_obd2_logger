@@ -152,3 +152,46 @@ String webPagesTerminal(const String &address) {
 </body>
 </html>)HTML";
 }
+
+String webPagesServerStatus() {
+  return R"HTML(<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Server Status</title>
+  <style>
+    body { font: 16px system-ui; margin: 2rem; }
+    pre { background: #eee; padding: 1rem; }
+  </style>
+  <script>
+    function formatNumber(num) {
+      return num.toLocaleString();
+    }
+
+    function formatTime(ms) {
+      let seconds = Math.floor(ms / 1000);
+      let minutes = Math.floor(seconds / 60);
+      let hours = Math.floor(minutes / 60);
+      let days = Math.floor(hours / 24);
+      return `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s ${ms % 1000}ms`;
+    }
+
+    async function updateStatus() {
+      try {
+        let response = await fetch('/server/status-json');
+        let data = await response.json();
+        document.getElementById('status').textContent = 
+          `Free heap: ${formatNumber(data.freeHeap)} bytes\n` +
+          `Uptime: ${formatTime(data.millis)}`;
+      } catch (e) { console.error(e); }
+    }
+    setInterval(updateStatus, 1000);
+    updateStatus();
+  </script>
+</head>
+<body>
+  <h1>Server Status</h1>
+  <pre id="status">Loading...</pre>
+</body>
+</html>)HTML";
+}

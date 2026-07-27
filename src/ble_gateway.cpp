@@ -73,6 +73,10 @@ void bleGatewaySetTargetAddress(const String &address, uint8_t addressType) {
   targetAddress = address;
   targetAddressType = addressType;
 }
+void bleGatewayUnsetTargetAddress() {
+  targetAddress.clear();
+  targetAddressType = BLE_ADDR_PUBLIC;
+}
 String bleGatewayTargetAddress() { return targetAddress; }
 uint8_t bleGatewayTargetAddressType() { return targetAddressType; }
 String bleGatewayDevicesHtml() { return devicesHtml; }
