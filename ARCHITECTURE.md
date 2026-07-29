@@ -84,7 +84,9 @@ cannot be associated with the same response.
    available. Upload retries must never block BLE callbacks or polling.
 4. **Web UI:** The current pages are separated from route handling in
    `web_pages.cpp`. They can later be embedded as standalone assets and moved
-   toward a JSON configuration/status API.
+   toward a JSON configuration/status API. See
+   [`docs/design/webui-state-design.md`](docs/design/webui-state-design.md) for
+   the connection state machine, route gating, and autologging design.
 
 ## Boundaries to preserve
 
