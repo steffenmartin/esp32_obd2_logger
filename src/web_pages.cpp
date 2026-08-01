@@ -42,7 +42,7 @@ String webPagesDashboard() {
       sorted.forEach(d => {
         let row = document.createElement('tr');
         row.innerHTML = `<td>${d.name}</td><td><code>${d.address}</code></td><td>${d.rssi}</td>
-                         <td>${d.isLeLink ? `<a href='/terminal?addr=${d.address}&type=${d.type}'>Connect</a>` : ''}</td>`;
+                         <td>${d.isLeLink ? `<a href='/terminal?addr=${d.address}&type=${d.type}&name=${encodeURIComponent(d.name)}'>Connect</a>` : ''}</td>`;
         if (d.isLeLink) tbodyLe.appendChild(row);
         else tbodyOther.appendChild(row);
       });

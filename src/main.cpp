@@ -5,6 +5,7 @@
 #include "ble_gateway.h"
 #include "obd_poller.h"
 #include "obd_survey.h"  // add to the existing #include block at the top
+#include "ui_state.h"
 #include "web_server.h"
 
 // Preserve the project's existing Wi-Fi configuration. This should eventually
@@ -34,4 +35,5 @@ void loop() {
   bleGatewayTick();
   obdPollerTick();
   obdSurveyTick();
+  uiStateTick();
 }

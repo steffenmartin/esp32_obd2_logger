@@ -7,6 +7,7 @@
 #include "obd_log.h"
 #include "obd_mode.h"
 #include "obd_survey.h"
+#include "ui_state.h"
 #include "web_pages.h"
 
 namespace {
@@ -18,9 +19,25 @@ String csvEscape(const String &value) {
   return escaped + "\"";
 }
 
+// Shared by handleConnect and handleTerminal's addr-initiated connect.
+// Applies the UiState guard (design doc S3) before touching the BLE
+// stack at all, then reconciles the outcome back into UiState. If the
+// guard rejects the attempt - some other connect is already in flight,
+// or we're in a state where connecting isn't legal - this doesn't touch
+// bleGateway at all; the caller falls back to whatever "not connected"
+// behavior it already had (redirect to /devices, 409, etc).
+bool guardedConnect() {
+  if (bleGatewayIsConnected()) return true;  // idempotent - e.g. terminal page reload
+  if (!uiStateTryStartConnect(bleGatewayTargetAddress(), bleGatewayTargetName())) return false;
+  bool connected = bleGatewayEnsureConnected();
+  if (connected) uiStateConnectSucceeded(); else uiStateConnectFailed();
+  return connected;
+}
+
 void handleDisconnect() {
   bleGatewayDisconnect();
   bleGatewayUnsetTargetAddress();
+  uiStateDisconnected();
   server.send(200, "text/plain", "Disconnected");
 }
 
@@ -43,8 +60,8 @@ void handleDevices() {
 void handleTerminal() {
   if (server.hasArg("addr")) {
     uint8_t addressType = server.hasArg("type") ? static_cast<uint8_t>(server.arg("type").toInt()) : 0; // 0 = BLE_ADDR_PUBLIC
-    bleGatewaySetTargetAddress(server.arg("addr"), addressType);
-    bleGatewayEnsureConnected(); // Attempt to connect upon navigating to terminal with addr
+    bleGatewaySetTargetAddress(server.arg("addr"), addressType, server.arg("name"));
+    guardedConnect();  // Attempt to connect upon navigating to terminal with addr
   }
   if (!bleGatewayIsConnected()) {
     server.sendHeader("Location", "/devices", true);
@@ -55,8 +72,8 @@ void handleTerminal() {
 }
 void handleDiagnostics() { server.send(200, "text/plain; charset=utf-8", diagnosticLogGet()); }
 void handleConnect() {
-  bool connected = bleGatewayEnsureConnected();
-  server.send(connected ? 200 : 409, "text/plain", connected ? "Connected" : "Connection failed");
+  bool connected = guardedConnect();
+  server.send(connected ? 200 : 409, "text/plain", connected ? "Connected" : "Connection failed or already in progress");
 }
 
 void handleSend() {
@@ -104,6 +121,8 @@ void handleSurveyStatus() {
   server.send(200, "text/plain", obdSurveyStatus());
 }
 
+void handleApiStatus() { server.send(200, "application/json", uiStateStatusJson()); }
+
 void handleServerStatusJson() {
   String json = "{";
   json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
@@ -132,6 +151,7 @@ void webServerBegin() {
   server.on("/survey/status", handleSurveyStatus);
   server.on("/server/status", handleServerStatus);
   server.on("/server/status-json", handleServerStatusJson);
+  server.on("/api/status", handleApiStatus);
   server.begin();
 }
 

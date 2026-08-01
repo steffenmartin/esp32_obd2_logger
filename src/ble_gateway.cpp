@@ -13,6 +13,7 @@ NimBLERemoteCharacteristic *remoteCharacteristic = nullptr;
 String devicesHtml = "<tr><td colspan='4' style='text-align:center;'>Scan sequence pending...</td></tr>";
 String devicesJson = "[]";
 String targetAddress;
+String targetName;
 uint8_t targetAddressType = BLE_ADDR_PUBLIC;
 unsigned long lastScanMs = 0;
 bool scanning = false;
@@ -69,15 +70,18 @@ void bleGatewayTick() {
   scan->start(3, scanCompleteCallback, false);
 }
 
-void bleGatewaySetTargetAddress(const String &address, uint8_t addressType) {
+void bleGatewaySetTargetAddress(const String &address, uint8_t addressType, const String &name) {
   targetAddress = address;
+  targetName = name;
   targetAddressType = addressType;
 }
 void bleGatewayUnsetTargetAddress() {
   targetAddress.clear();
+  targetName.clear();
   targetAddressType = BLE_ADDR_PUBLIC;
 }
 String bleGatewayTargetAddress() { return targetAddress; }
+String bleGatewayTargetName() { return targetName; }
 uint8_t bleGatewayTargetAddressType() { return targetAddressType; }
 String bleGatewayDevicesHtml() { return devicesHtml; }
 String bleGatewayDevicesJson() { return devicesJson; }
