@@ -19,6 +19,31 @@ unsigned long lastScanMs = 0;
 bool scanning = false;
 bool connected = false;
 
+// NimBLEClientCallbacks::onConnParamsUpdateRequest() defaults to
+// silently accepting any post-connection parameter update the
+// peripheral proposes - see app_config.h's comment above
+// BLE_CONN_SUPERVISION_TIMEOUT for why that's a problem. This override
+// only rejects updates that would *loosen* (increase) the supervision
+// timeout beyond what we originally requested; anything at or tighter
+// than that is still accepted, since there's no reason to fight a
+// peripheral proposing something equally fast or faster.
+//
+// A single static instance, not one per connection - NimBLEClient's
+// setClientCallbacks() takes a pointer and doesn't need a fresh object
+// per connect attempt, and this class carries no per-connection state
+// of its own.
+class ClientCallbacks : public NimBLEClientCallbacks {
+  bool onConnParamsUpdateRequest(NimBLEClient *, const ble_gap_upd_params *params) override {
+    if (params->supervision_timeout > BLE_CONN_SUPERVISION_TIMEOUT) {
+      diagnosticLogAppend("[BLE] Rejected peer's connection parameter update (would have loosened supervision timeout to " +
+                           String(params->supervision_timeout * 10) + "ms).");
+      return false;
+    }
+    return true;
+  }
+};
+ClientCallbacks clientCallbacks;
+
 void notifyCallback(NimBLERemoteCharacteristic *, uint8_t *data, size_t length, bool) {
   String fragment;
   for (size_t i = 0; i < length; ++i) fragment += static_cast<char>(data[i]);
@@ -91,10 +116,16 @@ bool bleGatewayEnsureConnected() {
   if (bleGatewayIsConnected()) return true;
   if (targetAddress.isEmpty()) { diagnosticLogAppend("[BLE] No target address selected."); return false; }
   if (scan->isScanning()) scan->stop();
-  if (client == nullptr) client = NimBLEDevice::createClient();
+  if (client == nullptr) {
+    client = NimBLEDevice::createClient();
+    // false = this is a static instance (see clientCallbacks above),
+    // not something NimBLE should take ownership of and delete.
+    client->setClientCallbacks(&clientCallbacks, false);
+    client->setConnectTimeout(BLE_CONNECT_TIMEOUT_S);
+  }
   String typeLabel = targetAddressType == BLE_ADDR_PUBLIC ? "PUBLIC" : "RANDOM";
   diagnosticLogAppend("[BLE] Connecting to " + targetAddress + " (" + typeLabel + ")...");
-  client->setConnectionParams(24, 40, 0, 50);
+  client->setConnectionParams(BLE_CONN_MIN_INTERVAL, BLE_CONN_MAX_INTERVAL, BLE_CONN_LATENCY, BLE_CONN_SUPERVISION_TIMEOUT);
   if (!client->connect(NimBLEAddress(targetAddress.c_str(), targetAddressType))) {
     diagnosticLogAppend("[BLE] Connection failed (address type: " + typeLabel + ").");
     return false;

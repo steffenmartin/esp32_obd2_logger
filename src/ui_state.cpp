@@ -8,6 +8,12 @@ String deviceAddress;
 String deviceName;
 String dropReason;
 
+// Remembers whether the currently in-flight Connecting attempt started
+// from Dropped (a Retry) rather than Disconnected (a fresh connect).
+// uiStateConnectFailed() uses this to decide where to land on failure -
+// see that function for why this matters.
+bool connectingFromDropped = false;
+
 const char *stateName(UiState s) {
   switch (s) {
     case UiState::Disconnected: return "disconnected";
@@ -49,6 +55,7 @@ bool uiStateTryStartConnect(const String &address, const String &name) {
   // drives state into Scanning, so this omission is inert for now rather
   // than a bug waiting to happen.
   if (state != UiState::Disconnected && state != UiState::Dropped) return false;
+  connectingFromDropped = (state == UiState::Dropped);
   deviceAddress = address;
   deviceName = name;
   dropReason = "";
@@ -69,9 +76,21 @@ void uiStateConnectSucceeded() {
 
 void uiStateConnectFailed() {
   if (state != UiState::Connecting) return;
+  if (connectingFromDropped) {
+    // A Retry failed - go back to Dropped rather than Disconnected, so
+    // the device info and Retry/Abort UI survive and another attempt
+    // stays possible without navigating away. Before this check
+    // existed, every failed Retry fell through to Disconnected, which
+    // the dashboard/terminal pages render no banner for at all -
+    // Retry/Abort would vanish with no way back except leaving the
+    // page entirely.
+    dropReason = "reconnect attempt failed";
+    transitionTo(UiState::Dropped);
+    return;
+  }
   // Back to Disconnected rather than Dropped - Dropped is specifically
   // for losing a link that was actually established (design doc S5); a
-  // failed attempt never had one to lose.
+  // failed first attempt never had one to lose.
   transitionTo(UiState::Disconnected);
 }
 
