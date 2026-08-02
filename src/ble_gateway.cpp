@@ -41,7 +41,26 @@ class ClientCallbacks : public NimBLEClientCallbacks {
     }
     return true;
   }
+
+  // Logs the moment NimBLE's host stack itself notices the link is
+  // gone - confirmed via testing to fire promptly on an actual
+  // supervision timeout (verified against real hardware power-loss,
+  // not just stopping the host-side emulator process, which leaves its
+  // ESP32 radio still holding the link up at the controller level with
+  // nothing to time out against). Event-driven rather than only ever
+  // polling bleGatewayIsConnected() from uiStateTick() - a useful
+  // permanent addition to the diagnostic log independent of that.
+  //
+  // Signature confirmed against this project's actual resolved
+  // NimBLE-Arduino version (.pio/libdeps/.../NimBLEClient.h:134) - no
+  // reason code on the client-side callback, unlike
+  // NimBLEServerCallbacks::onDisconnect()'s two overloads (a different
+  // class, don't confuse the two).
+  void onDisconnect(NimBLEClient *) override {
+    diagnosticLogAppend("[BLE] Link lost (onDisconnect).");
+  }
 };
+
 ClientCallbacks clientCallbacks;
 
 void notifyCallback(NimBLERemoteCharacteristic *, uint8_t *data, size_t length, bool) {
