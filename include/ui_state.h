@@ -4,16 +4,13 @@
 
 // ui_state.h
 //
-// First slice of the Web UI state machine described in
-// docs/design/webui-state-design.md (S2-3). Single source of truth for
-// what the browser should show: connection status, which device is
-// involved, and (for Dropped) why the link went down.
+// Web UI state machine described in docs/design/webui-state-design.md
+// (S2-3). Single source of truth for what the browser should show:
+// connection status, which device is involved, and (for Dropped) why
+// the link went down.
 //
 // Deliberately NOT included yet, per the design doc's own scope notes -
-// each is its own follow-up slice once this one lands:
-//   - Scanning is unreachable: ble_gateway's scan is still the always-on
-//     periodic one predating this doc, not the user-triggered one S1
-//     calls for. Wiring that up is a separate change to bleGatewayTick().
+// each is its own follow-up slice:
 //   - ConnectedContext registry (S4) - every Connected session currently
 //     reports context "terminal", the only context that exists today.
 //   - mode (manual/auto) and autologging (S6) - always "manual"; there's
@@ -25,11 +22,23 @@
 
 enum class UiState { Disconnected, Scanning, Connecting, Connected, Dropped };
 
+// Starts a scan (Disconnected -> Scanning only - see uiStateTryStartConnect()
+// for why Dropped isn't a valid source here despite being one for a
+// connect attempt: Dropped implies a specific known device to retry,
+// scanning is specifically for finding a *different* one).
+bool uiStateTryStartScan();
+
+// User-initiated Cancel (Scanning -> Disconnected). Distinct from the
+// scan naturally finishing on its own, which uiStateTick() detects and
+// handles the same way - see that function.
+void uiStateCancelScan();
+
 // Mirrors tryStartConnect() from S3: single compare-and-swap-style guard
 // so a second /connect call (e.g. a stale second browser tab) is
-// rejected rather than racing the first one. Legal only from
-// Disconnected or Dropped - see ui_state.cpp for why Scanning isn't
-// included despite the state diagram showing it as a source.
+// rejected rather than racing the first one. Legal from Disconnected
+// (fresh connect), Dropped (Retry), or Scanning (tapping a device row
+// while a scan is still in progress, per the state diagram's
+// Scanning -> Connecting edge).
 bool uiStateTryStartConnect(const String &address, const String &name);
 
 // Retry from Dropped (S5's "Dropped card" primary action). Same guard,

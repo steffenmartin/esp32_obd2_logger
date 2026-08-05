@@ -45,16 +45,24 @@ String jsonEscape(const String &value) {
 }
 }  // namespace
 
+bool uiStateTryStartScan() {
+  if (state != UiState::Disconnected) return false;
+  transitionTo(UiState::Scanning);
+  return true;
+}
+
+void uiStateCancelScan() {
+  if (state != UiState::Scanning) return;
+  transitionTo(UiState::Disconnected);
+}
+
 bool uiStateTryStartConnect(const String &address, const String &name) {
   // Disconnected -> Connecting covers both a fresh connect and the
   // reconnect shortcut (design doc S2); Dropped -> Connecting covers
-  // Retry. Scanning is deliberately excluded even though the state
-  // diagram draws Scanning -> Connecting as a source edge - that edge
-  // means "tapping a device row while a real Scanning state is active,"
-  // which doesn't exist yet (see the header comment). Nothing currently
-  // drives state into Scanning, so this omission is inert for now rather
-  // than a bug waiting to happen.
-  if (state != UiState::Disconnected && state != UiState::Dropped) return false;
+  // Retry; Scanning -> Connecting covers tapping a device row while a
+  // scan is still in progress (the state diagram draws this edge
+  // explicitly - scanning doesn't need to finish or be cancelled first).
+  if (state != UiState::Disconnected && state != UiState::Dropped && state != UiState::Scanning) return false;
   connectingFromDropped = (state == UiState::Dropped);
   deviceAddress = address;
   deviceName = name;
@@ -100,6 +108,17 @@ void uiStateDisconnected() {
 }
 
 void uiStateTick() {
+  // Scanning ends on its own once the ~3s radio scan completes (see
+  // bleGatewayStartScan()) - this is the counterpart to Cancel
+  // (uiStateCancelScan()) for that same transition, detected the same
+  // way Connected->Dropped is below: polling the ble_gateway accessor
+  // each tick rather than ble_gateway calling into UiState directly,
+  // keeping ble_gateway itself UI-agnostic.
+  if (state == UiState::Scanning) {
+    if (!bleGatewayIsScanning()) transitionTo(UiState::Disconnected);
+    return;
+  }
+
   // Only Connected can silently become un-connected out from under us -
   // Connecting's outcome is always reported explicitly via
   // uiStateConnectSucceeded()/Failed(), so it doesn't need polling here.

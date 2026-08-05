@@ -76,6 +76,24 @@ void handleConnect() {
   server.send(connected ? 200 : 409, "text/plain", connected ? "Connected" : "Connection failed or already in progress");
 }
 
+// Starts a user-triggered scan (design doc S1). 409 if the guard
+// rejects it - already scanning, already connected/connecting, etc -
+// same "try again in a moment" convention as handleSurveyStart().
+void handleScanStart() {
+  bool started = uiStateTryStartScan();
+  if (started) bleGatewayStartScan();
+  server.send(started ? 200 : 409, "text/plain", started ? "Scan started" : "Cannot start scan in current state");
+}
+
+// Cancels an in-progress scan early. Always 200 - cancelling something
+// that isn't running is treated as already-achieved, not an error, same
+// as handleSurveyStop() and handleDisconnect() below.
+void handleScanCancel() {
+  bleGatewayCancelScan();
+  uiStateCancelScan();
+  server.send(200, "text/plain", "Scan cancelled");
+}
+
 void handleSend() {
   if (!server.hasArg("cmd")) { server.send(400, "text/plain", "Missing command parameter"); return; }
   String command = server.arg("cmd");
@@ -144,6 +162,8 @@ void webServerBegin() {
   server.on("/diagnostics", handleDiagnostics);
   server.on("/connect", handleConnect);
   server.on("/disconnect", handleDisconnect);
+  server.on("/scan", handleScanStart);
+  server.on("/scan/cancel", handleScanCancel);
   server.on("/send", handleSend);
   server.on("/raw-log.csv", handleRawLog);
   server.on("/survey/start", handleSurveyStart);

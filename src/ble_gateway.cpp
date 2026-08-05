@@ -10,12 +10,11 @@ namespace {
 NimBLEScan *scan = nullptr;
 NimBLEClient *client = nullptr;
 NimBLERemoteCharacteristic *remoteCharacteristic = nullptr;
-String devicesHtml = "<tr><td colspan='4' style='text-align:center;'>Scan sequence pending...</td></tr>";
+String devicesHtml = "<tr><td colspan='4' style='text-align:center;'>No scan yet - click Scan to search for nearby BLE devices.</td></tr>";
 String devicesJson = "[]";
 String targetAddress;
 String targetName;
 uint8_t targetAddressType = BLE_ADDR_PUBLIC;
-unsigned long lastScanMs = 0;
 bool scanning = false;
 bool connected = false;
 
@@ -96,6 +95,12 @@ void scanCompleteCallback(NimBLEScanResults foundDevices) {
   devicesJson = json;
   scan->clearResults();
   scanning = false;
+  // Fires here regardless of whether the scan ran its full ~3s or was
+  // cut short by bleGatewayCancelScan()'s scan->stop() - see that
+  // function's comment for why. If a Cancel log line is immediately
+  // followed by this one, that's expected on a version where stop()
+  // itself triggers this same callback, not a double-fire bug.
+  diagnosticLogAppend("[BLE] Scan complete. " + String(foundDevices.getCount()) + " device(s) found.");
 }
 }
 
@@ -108,11 +113,41 @@ void bleGatewayBegin() {
 }
 
 void bleGatewayTick() {
-  if (bleGatewayIsConnected() || scanning || millis() - lastScanMs < BLE_SCAN_INTERVAL_MS) return;
-  lastScanMs = millis();
+  // Used to run a periodic auto-scan here (every BLE_SCAN_INTERVAL_MS).
+  // Per docs/design/webui-state-design.md S1 ("a fresh BLE scan is
+  // always user-triggered - no auto-scan on boot or page load"),
+  // scanning is now explicitly started via bleGatewayStartScan()
+  // (called from web_server's /scan route) rather than driven from
+  // here. Left as an empty stub rather than removed entirely, matching
+  // every other module's *Tick() function being unconditionally called
+  // from loop() regardless of whether it currently has anything to do
+  // (see obd_poller.cpp/obd_survey.cpp for the same pattern).
+}
+
+void bleGatewayStartScan() {
+  if (bleGatewayIsConnected() || scanning) return;
   scanning = true;
+  diagnosticLogAppend("[BLE] Scan started.");
   scan->start(3, scanCompleteCallback, false);
 }
+
+void bleGatewayCancelScan() {
+  if (!scanning) return;
+  diagnosticLogAppend("[BLE] Scan cancelled.");
+  scan->stop();
+  // Explicitly cleared here rather than assuming scan->stop() itself
+  // triggers scanCompleteCallback - whether it does depends on this
+  // project's exact resolved NimBLE-Arduino version, and this project
+  // has already been burned twice by assuming NimBLE API behavior
+  // instead of checking it (see app_config.h's BLE_CONNECT_TIMEOUT_S
+  // and this file's onDisconnect() comments). If stop() does also
+  // invoke the callback, this is harmless - it would just set
+  // scanning = false again and repopulate the device tables with
+  // whatever partial results came in before the cancel.
+  scanning = false;
+}
+
+bool bleGatewayIsScanning() { return scanning; }
 
 void bleGatewaySetTargetAddress(const String &address, uint8_t addressType, const String &name) {
   targetAddress = address;

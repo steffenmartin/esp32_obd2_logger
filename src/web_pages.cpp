@@ -18,6 +18,8 @@ String webPagesDashboard() {
     .status-dropped { background: #fdecea; border: 1px solid #f5c2c0; }
     .status-connecting { background: #fff8e1; border: 1px solid #ffe082; }
     .status-connected { background: #e8f5e9; border: 1px solid #a5d6a7; }
+    .status-scanning { background: #e3f2fd; border: 1px solid #90caf9; }
+    #scan-button:disabled { opacity: .5; cursor: default; }
   </style>
   <script>
     let devices = [];
@@ -35,6 +37,17 @@ String webPagesDashboard() {
       let tbodyOther = document.getElementById('device-list-other');
       tbodyLe.innerHTML = '';
       tbodyOther.innerHTML = '';
+
+      if (devices.length === 0) {
+        // Covers both "never scanned yet" (boot-time state) and "scan
+        // completed but found nothing" - the /devices-json payload
+        // alone can't distinguish the two, and a single message that
+        // reads fine either way is simpler than trying to.
+        let emptyRow = '<tr><td colspan="4">No devices found. Click "Scan for devices" to search.</td></tr>';
+        tbodyLe.innerHTML = emptyRow;
+        tbodyOther.innerHTML = emptyRow;
+        return;
+      }
 
       let sorted = [...devices].sort((a, b) => {
         let valA = a[sortCol].toString().toLowerCase();
@@ -59,18 +72,38 @@ String webPagesDashboard() {
         render();
       } catch (e) { console.error(e); }
     }
-    setInterval(refresh, 5000);
 
-    // /api/status polling - reflects UiState (see ui_state.h) so the
-    // dashboard shows Connecting/Dropped even though this page is
-    // normally bypassed once actually Connected (handleRoot()/
-    // handleDevices() redirect to /terminal in that case - see
-    // web_server.cpp). "connected" is still handled here as a fallback
-    // for the brief window before that redirect takes effect, not as
-    // the expected steady state for this page.
+    // Local mirror of "was the last known state Scanning" - used only
+    // to detect the *moment* a scan ends (naturally completing or being
+    // cancelled), so results can be pulled exactly once right then,
+    // rather than continuously polling /devices-json in the background
+    // the way this page used to (see design doc S1: scans are static
+    // per-request snapshots, not a live background feed).
+    let wasScanning = false;
+
     function renderStatus(status) {
       let banner = document.getElementById('status-banner');
+      let scanButton = document.getElementById('scan-button');
       let name = status.device ? status.device.name : 'device';
+
+      scanButton.disabled = (status.state !== 'disconnected');
+
+      if (status.state === 'scanning') {
+        wasScanning = true;
+        banner.className = 'status-banner status-scanning';
+        banner.style.display = 'block';
+        banner.innerHTML = 'Scanning for nearby BLE devices… ' +
+          '<button onclick="cancelScan()">Cancel</button>';
+        return;
+      }
+      if (wasScanning) {
+        // Scan just ended (completed on its own or was cancelled) -
+        // pull whatever results it found. A one-shot fetch here, not a
+        // recurring poll - see the comment on wasScanning above.
+        wasScanning = false;
+        refresh();
+      }
+
       if (status.state === 'dropped') {
         banner.className = 'status-banner status-dropped';
         banner.style.display = 'block';
@@ -88,6 +121,21 @@ String webPagesDashboard() {
       } else {
         banner.style.display = 'none';
       }
+    }
+
+    // Starts a scan (design doc S1 - always user-triggered, never
+    // automatic). The actual "in progress" feedback comes from the next
+    // /api/status poll picking up state=scanning, same pattern as
+    // retryConnect() below - no need for an eager local banner update
+    // here since /scan itself doesn't block the way /connect does.
+    async function startScan() {
+      await fetch('/scan');
+      refreshStatus();
+    }
+
+    async function cancelScan() {
+      await fetch('/scan/cancel');
+      refreshStatus();
     }
 
     // Reuses the same /connect route and guard (guardedConnect() in
@@ -136,6 +184,7 @@ String webPagesDashboard() {
   <div id="status-banner"></div>
   <p>Select a compatible BLE dongle. Once connected, the logger records raw OBD exchanges automatically.</p>
   <p class="actions">
+    <button id="scan-button" onclick="startScan()">Scan for devices</button> ·
     <a href="/raw-log.csv">Download raw log (CSV)</a> · 
     <a href="/diagnostics">Diagnostics</a>
   </p>
@@ -149,7 +198,7 @@ String webPagesDashboard() {
         <th>Action</th>
       </tr>
     </thead>
-    <tbody id="device-list-le"></tbody>
+    <tbody id="device-list-le"><tr><td colspan="4">No scan yet - click "Scan for devices" above.</td></tr></tbody>
   </table>
   <h3>Other Devices</h3>
   <table>
@@ -161,7 +210,7 @@ String webPagesDashboard() {
         <th>Action</th>
       </tr>
     </thead>
-    <tbody id="device-list-other"><tr><td colspan="4">Loading…</td></tr></tbody>
+    <tbody id="device-list-other"><tr><td colspan="4">No scan yet - click "Scan for devices" above.</td></tr></tbody>
   </table>
   <script>refresh(); refreshStatus();</script>
 </body>

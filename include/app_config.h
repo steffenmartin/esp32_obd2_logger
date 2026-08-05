@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-constexpr unsigned long BLE_SCAN_INTERVAL_MS = 6000;
 constexpr unsigned long OBD_POLL_INTERVAL_MS = 1000;
 constexpr unsigned long OBD_RESPONSE_TIMEOUT_MS = 3000;
 
