@@ -2,6 +2,7 @@
 
 #include <WebServer.h>
 
+#include "alpine_js.h"
 #include "ble_gateway.h"
 #include "diagnostic_log.h"
 #include "obd_log.h"
@@ -9,6 +10,7 @@
 #include "obd_survey.h"
 #include "ui_state.h"
 #include "web_pages.h"
+#include "wifi_manager.h"
 
 namespace {
 WebServer server(80);
@@ -144,10 +146,19 @@ void handleApiStatus() { server.send(200, "application/json", uiStateStatusJson(
 void handleServerStatusJson() {
   String json = "{";
   json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
-  json += "\"millis\":" + String(millis());
+  json += "\"millis\":" + String(millis()) + ",";
+  // Only meaningful while Connected (see wifiManagerRssi()'s own doc
+  // comment) - the shell's WiFi indicator treats a null-ish 0 the same
+  // as "no current reading" rather than a real signal strength.
+  json += "\"wifiRssi\":" + String(wifiManagerRssi());
   json += "}";
   server.send(200, "application/json", json);
 }
+
+// Serves the locally-bundled Alpine.js source - see alpine_js.cpp for
+// provenance and why this is embedded directly rather than served from
+// a filesystem partition.
+void handleStaticAlpine() { server.send(200, "application/javascript", ALPINE_JS_SOURCE); }
 }
 
 void handleServerStatus() {
@@ -172,6 +183,7 @@ void webServerBegin() {
   server.on("/server/status", handleServerStatus);
   server.on("/server/status-json", handleServerStatusJson);
   server.on("/api/status", handleApiStatus);
+  server.on("/static/alpine.min.js", handleStaticAlpine);
   server.begin();
 }
 
